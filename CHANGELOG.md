@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### 🔧 Bug Fixes
+
+- **fix(mitm):** add in-process guard to prevent concurrent MITM server starts. (thanks @anki1kr)
+
 ---
 
 ## [3.8.44] — TBD
