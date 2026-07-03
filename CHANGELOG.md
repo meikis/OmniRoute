@@ -22,6 +22,8 @@
 
 ### 🔧 Bug Fixes
 
+- **oauth (Zed "Unknown provider" crash):** adding **Zed** from the providers dashboard threw an unhandled `OAuth GET error: Unknown provider: zed` (500) ([#6041](https://github.com/diegosouzapw/OmniRoute/issues/6041)). Zed is a **keychain-import-only** provider — it's listed in the OAuth catalog so the UI shows it, but has no OAuth handler, so the generic `/api/oauth/[provider]/[action]` route hit `getProvider("zed")` and crashed. The route now recognizes keychain-import-only providers and returns a clear **400** pointing users at the **Import** button (for both GET and POST OAuth actions), instead of a 500. Regression guard: `tests/unit/oauth-keychain-import-only-6041.test.ts`. (thanks @imblowsnow)
+
 - **dashboard ("Update now" → Internal Server Error):** clicking **Update now** on the dashboard home could crash the page with a blank "Internal Server Error" screen (`Minified React error #31`). The handler POSTs the loopback-only `/api/system/version` auto-update endpoint and, on a non-OK JSON response (e.g. a `403` when the dashboard is reached through a reverse proxy / non-loopback origin), passed the raw error envelope object `{ error: { code, message, correlation_id } }` straight to `notify.error()`, which rendered the object as a React child and threw #31. The update-error path now funnels the body through `extractApiErrorMessage()` (the same safe extractor added in #5340), so a readable string always reaches the toast. Regression guard: `tests/unit/ui/home-update-error-render-5991.test.ts`. ([#5991](https://github.com/diegosouzapw/OmniRoute/issues/5991))
 
 ### 📝 Maintenance
