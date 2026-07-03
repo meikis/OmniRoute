@@ -41,6 +41,11 @@ import {
 } from "../config/antigravityModelAliases.ts";
 import { cloakAntigravityToolPayload } from "../config/toolCloaking.ts";
 import {
+  fixToolPairs,
+  fixToolAdjacency,
+  stripTrailingAssistantOrphanToolUse,
+} from "../services/contextManager.ts";
+import {
   shouldStripCloudCodeThinking,
   stripCloudCodeThinkingConfig,
 } from "../services/cloudCodeThinking.ts";
@@ -478,6 +483,31 @@ function sanitizeAntigravityGeminiRequest(
   }
 
   return clean;
+}
+
+/**
+ * Sanitize orphan tool_use / tool_result pairs on an Antigravity upstream body
+ * before it is sent to the (Claude-on-Vertex) backend (#6026).
+ *
+ * AntigravityExecutor overrides BaseExecutor.execute(), so it never reaches the
+ * base executor's tool-pair guard — a client (e.g. Antigravity IDE via
+ * AgentBridge) can ship a history whose first message already carries a
+ * `tool_result` with no preceding `tool_use`, which Anthropic rejects with
+ * "Each `tool_result` block must have a corresponding `tool_use` block in the
+ * previous message." Mirror the exact sequence base.ts uses for Claude-bound
+ * providers: strip orphan pairs, enforce strict adjacency, re-strip, then drop a
+ * trailing unmatched assistant(tool_use). Idempotent on clean histories.
+ */
+export function sanitizeAntigravityToolMessages(
+  body: Record<string, unknown>
+): Record<string, unknown> {
+  if (!body || typeof body !== "object" || !Array.isArray(body.messages)) return body;
+  const messages = body.messages as Record<string, unknown>[];
+  const fixed = fixToolPairs(messages);
+  const adjacent = fixToolPairs(fixToolAdjacency(fixed));
+  const stripped = stripTrailingAssistantOrphanToolUse(adjacent);
+  body.messages = stripped;
+  return body;
 }
 
 export class AntigravityExecutor extends BaseExecutor {
@@ -1143,6 +1173,10 @@ export class AntigravityExecutor extends BaseExecutor {
       let transformedBody: Record<string, unknown> = transformed;
 
       if (transformedBody && typeof transformedBody === "object") {
+        // #6026 — strip orphan tool_use/tool_result pairs before the upstream
+        // send (this executor overrides BaseExecutor.execute(), so the base
+        // guard never runs). Must precede cloaking, which only remaps names.
+        transformedBody = sanitizeAntigravityToolMessages(transformedBody);
         const cloaked = cloakAntigravityToolPayload(transformedBody);
         transformedBody = cloaked.body;
         requestToolNameMap = cloaked.toolNameMap;
